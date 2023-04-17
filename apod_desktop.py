@@ -338,10 +338,19 @@ def get_apod_info(image_id):
     """
     # TODO: Query DB for image info
     # TODO: Put information into a dictionary
+
+    conn = sqlite3.connect(image_cache_db)
+    
+    cursor = conn.cursor()
+    # print("image_id::::",image_id)
+    cursor.execute('SELECT title, explanation, file_path FROM apod_images WHERE id = ?', (image_id,))
+    result = cursor.fetchone()
+    # print("result:::::",result[0])
+
     apod_info = {
-        #'title': , 
-        #'explanation': ,
-        'file_path': 'TBD',
+        'title': result[0], 
+        'explanation': result[1],
+        'file_path': result[2],
     }
     return apod_info
 
