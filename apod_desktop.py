@@ -18,11 +18,15 @@ import inspect
 import argparse
 import datetime
 import sys
-
-
+import sqlite3
+import hashlib
+import re
+import requests
+import urllib
 # Global variables
 image_cache_dir = None  # Full path of image cache directory
 image_cache_db = None   # Full path of image cache database
+api_key = '1bVsvhf8QrkRj4nXgJkDErQvlJYXnANS0US5V8Pw'
 
 def main():
     ## DO NOT CHANGE THIS FUNCTION ##
@@ -101,10 +105,49 @@ def init_apod_cache(parent_dir):
     """
     global image_cache_dir
     global image_cache_db
+
     # TODO: Determine the path of the image cache directory
+    image_cache_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'images')
+
+    print("image cache directory : ",image_cache_dir)    
     # TODO: Create the image cache directory if it does not already exist
+    if not os.path.exists(image_cache_dir):
+        os.makedirs(image_cache_dir)
+        print("Image Cache Directory Created")
+    else:
+        print("Image Cache Directory already exists.")
+
+    
+
+
+
     # TODO: Determine the path of image cache DB
+    image_cache_db = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'images')
+    image_cache_db = os.path.join(image_cache_db, 'apod.db')
+    print("image cache database : ",image_cache_db)
+
     # TODO: Create the DB if it does not already exist
+    if not os.path.exists(image_cache_db):
+        # os.makedirs(image_cache_db)
+        print("Image Cache DB Created")
+    else:
+        print("image Cache DB already exists.")    
+    
+    # Connect to the SQLite database and create the table if it doesn't already exist
+    conn = sqlite3.connect(image_cache_db)
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS apod_images
+             (id INTEGER PRIMARY KEY, title TEXT, explanation TEXT, file_path TEXT, hash TEXT)''')
+
+
+
+# Check if an image with the same SHA-256 hash value already exists in the cache
+def hash_file(file_path):
+    with open(file_path, 'rb') as f:
+        data = f.read()
+        return hashlib.sha256(data).hexdigest()
+
+   
 
 def add_apod_to_cache(apod_date):
     """Adds the APOD image from a specified date to the image cache.
@@ -126,7 +169,98 @@ def add_apod_to_cache(apod_date):
     # TODO: Check whether the APOD already exists in the image cache
     # TODO: Save the APOD file to the image cache directory
     # TODO: Add the APOD information to the DB
+    apod_url = f'https://api.nasa.gov/planetary/apod?api_key={api_key}&date={apod_date.isoformat()}'
+    response = requests.get(apod_url)
+    apod_data = response.json()
+    # print("##########apod_data##########",apod_data)
+    if apod_data['media_type'] == 'image':
+        # Download the high-definition image file if it doesn't already exist in the cache
+        image_url = apod_data['hdurl']
+        print("Getting "+ apod_date.isoformat() +" APOD information from NASA...success")
+        print("APOD title:",apod_data['title'])
+        print("APOD URL:",image_url)
+        print("Downloading image from ",image_url,"..success")
+        
+        image_ext = os.path.splitext(urllib.parse.urlparse(image_url).path)[1]
+        image_title = re.sub(r'[^a-zA-Z0-9\s_]+', '', apod_data['title']).strip().replace(' ', '_')
+        image_file_name = f'{image_title}{image_ext}'
+        image_file_path = os.path.join(image_cache_dir, image_file_name)
+        image_hash = hash_file(image_file_path) if os.path.exists(image_file_path) else None
+        if not image_hash:
+            response = requests.get(image_url)
+            with open(image_file_path, 'wb') as f:
+                f.write(response.content)
+            image_hash = hash_file(image_file_path)
+        # Check if the image already exists in the database
+        conn = sqlite3.connect(image_cache_db)
+        c = conn.cursor()
+        print("APOD SHA-256:",image_hash)
+        c.execute('SELECT id FROM apod_images WHERE hash=?', (image_hash,))
+        existing_image_id = c.fetchone()
+        conn.commit()
+        # print("existing_image_id::::::::::",existing_image_id)
+        if existing_image_id:
+            print('Image already exists in cache.')
+            return existing_image_id[0]
+        else:
+            new_Last_Id = add_apod_to_db(apod_data['title'], apod_data['explanation'], image_file_path, image_hash)
+            print("APOD image is not already in cache.")
+            print("APOD file path:",image_file_path)
+            print("Saving image file as ",image_file_path, "...success")
+            print("Adding APOD to image cache DB...success")
+            return new_Last_Id
+    
+    # else (apod_data['media_type'] == 'video'):
+    else:
+         # Download the high-definition image file if it doesn't already exist in the cache
+        videos_url = apod_data['url']
+        # print("videos_url::::",videos_url)
+        # Define the regular expression pattern
+        embed_pattern = r'https://www\.youtube\.com/embed/([a-zA-Z0-9_-]+)\?.*'
+        
+        # Define the replacement pattern for the thumbnail URL
+        thumbnail_pattern = r'https://img.youtube.com/vi/\1/0.jpg'
+
+        # Use the re.sub() method to replace the pattern in the input URL with the thumbnail URL
+        image_url = re.sub(embed_pattern, thumbnail_pattern, videos_url)
+
+        # print("image_url::::::::::",image_url)
+        print("Getting "+ apod_date.isoformat() +" APOD information from NASA...success")
+        print("APOD title:",apod_data['title'])
+        print("APOD URL:",image_url)
+        print("Downloading image from ",image_url,"..success")        
+        image_ext = os.path.splitext(urllib.parse.urlparse(image_url).path)[1]
+        image_title = re.sub(r'[^a-zA-Z0-9\s_]+', '', apod_data['title']).strip().replace(' ', '_')
+        image_file_name = f'{image_title}{image_ext}'
+        image_file_path = os.path.join(image_cache_dir, image_file_name)
+        image_hash = hash_file(image_file_path) if os.path.exists(image_file_path) else None
+        if not image_hash:
+            response = requests.get(image_url)
+            with open(image_file_path, 'wb') as f:
+                f.write(response.content)
+            image_hash = hash_file(image_file_path)
+        # Check if the image already exists in the database
+        conn = sqlite3.connect(image_cache_db)
+        c = conn.cursor()
+        print("APOD SHA-256:",image_hash)
+        c.execute('SELECT id FROM apod_images WHERE hash=?', (image_hash,))
+        existing_image_id = c.fetchone()
+        conn.commit()
+        # print("existing_image_id::::::::::",existing_image_id)
+        if existing_image_id:
+            print('Image already exists in cache.')
+            return existing_image_id[0]
+        else:
+            new_Last_Id = add_apod_to_db(apod_data['title'], apod_data['explanation'], image_file_path, image_hash)
+            print("APOD image is not already in cache.")
+            print("APOD file path:",image_file_path)
+            print("Saving image file as ",image_file_path, "...success")
+            print("Adding APOD to image cache DB...success")
+            return new_Last_Id
+
+
     return 0
+
 
 def add_apod_to_db(title, explanation, file_path, sha256):
     """Adds specified APOD information to the image cache DB.
