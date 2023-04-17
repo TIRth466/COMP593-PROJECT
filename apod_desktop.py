@@ -13,7 +13,7 @@ Parameters:
 """
 
 import os
-import imagelib as image_lib
+import image_lib 
 import inspect
 import argparse
 import datetime
