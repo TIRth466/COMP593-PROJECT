@@ -50,7 +50,7 @@ def main():
         image_lib.set_desktop_background_image(apod_info['file_path'])
         result = image_lib.set_desktop_background_image(apod_info['file_path'])
         if result:
-            print("Setting desktop to"+apod_info['file_path']+"...success")
+            print("Setting desktop to "+apod_info['file_path']+"...success")
 
 def get_apod_date():
     """Gets the APOD date
