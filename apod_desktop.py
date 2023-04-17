@@ -259,7 +259,7 @@ def add_apod_to_cache(apod_date):
             return new_Last_Id
 
 
-    return 0
+   
 
 
 def add_apod_to_db(title, explanation, file_path, sha256):
@@ -275,7 +275,14 @@ def add_apod_to_db(title, explanation, file_path, sha256):
         int: The ID of the newly inserted APOD record, if successful.  Zero, if unsuccessful       
     """
     # TODO: Complete function body
-    return 0
+    conn = sqlite3.connect(image_cache_db)
+    c = conn.cursor()
+    c.execute('INSERT INTO apod_images (title, explanation, file_path, hash) VALUES (?, ?, ?, ?)',
+                (title, explanation, file_path, sha256))
+    new_Last_Id = c.lastrowid
+    conn.commit()
+    return new_Last_Id
+    
 
 def get_apod_id_from_db(image_sha256):
     """Gets the record ID of the APOD in the cache having a specified SHA-256 hash value
